@@ -12,7 +12,7 @@ grabChapter = (dir, link, number) ->
 	body = body\gsub 'align="left"', ''
 	body = body\gsub 'align="CENTER"', 'style="text-align:center;"'
 	body = body\gsub 'align="center"', 'style="text-align:center;"'
-
+	body = body\gsub '<span style="font--size:15px;font--style:inherit;line--height:1.625;">', '<span>'
 
 	lines = {}
 	for line in body\gmatch '[^\n]+'

@@ -1,5 +1,14 @@
 http = require 'socket.http'
 
+if arg[1] == nil or arg[1] == '' or arg[2] == nil or arg[2] == ''
+	print 'Usage: ' .. arg[0] .. ' <name> <first link>'
+	os.exit!
+
+
+-- link = 'https://pactwebserial.wordpress.com/2013/12/17/bonds-1-1/'
+book = arg[1]
+link = arg[2]
+
 grabChapter = (dir, link, number) ->
 	
 	print 'grabbing ' .. link
@@ -13,7 +22,13 @@ grabChapter = (dir, link, number) ->
 	body = body\gsub 'align="CENTER"', 'style="text-align:center;"'
 	body = body\gsub 'align="center"', 'style="text-align:center;"'
 	body = body\gsub '<span style="font--size:15px;font--style:inherit;line--height:1.625;">', '<span>'
-
+	body = body\gsub 'id="result_box"', ''
+	body = body\gsub '<p style="text--align:left;">\n', ''
+	body = body\gsub '<p style="text--align:center;">\n', ''
+	body = body\gsub '<br />\n</strong></p>', '<br /></strong></p>'
+	body = body\gsub '<strong>Autumn<br />\n', '<strong>Autumn<br /></strong></p>\n'
+	
+	
 	lines = {}
 	for line in body\gmatch '[^\n]+'
 		table.insert lines, line
@@ -28,11 +43,13 @@ grabChapter = (dir, link, number) ->
 		if pos
 			title = line\sub pos+1, -5
 		
-		pos = line\find '>Next Chapter<'
-		unless pos then pos = line\find '> Next Chapter<'
+		pos = line\find '">Next Chapter<'
+		unless pos then pos = line\find '/"><strong>Next'
+		unless pos then pos = line\find '/">Next'
+		unless pos then pos = line\find '/"> Next'
 		
-		if pos
-			pos -= 2
+		if pos and next == ''
+			pos -= 1
 			
 			start = pos
 			while start > 1
@@ -59,13 +76,13 @@ grabChapter = (dir, link, number) ->
 			<h1>]] .. title .. '</h1>\n\t\t</header>\n'
 	
 	for line in *lines
-		if line\find('Next Chapter<') or line\find('Last Chapter<')
+		if line\find('/">Next') or line\find('/"> Next') or line\find('Last Chapter<') or line\find('>Previous<') or line\find('</div><!---- .entry--content ---->')
 			j += 1
 			if j > 1
 				break
 			continue
 			
-		if line\find('</del></p>') or line\find('<p>&nbsp;</p>')
+		if line\find('</del></p>') or line\find('<p>&nbsp;</p>') or line\gsub('%s+', '') == '</strong></p>'
 			continue
 	
 		if j > 0
@@ -79,25 +96,43 @@ grabChapter = (dir, link, number) ->
 
 
 os.execute 'rm -r book/'
-os.execute 'rm book.epub'
 os.execute 'mkdir book/'
 os.execute 'mkdir book/META-INF/'
 os.execute 'mkdir book/OPS/'
 os.execute 'mkdir book/OPS/Text'
 os.execute 'cp -r Images/ book/OPS/'
 
-link = 'https://parahumans.wordpress.com/2011/06/11/1-1/'
-
-
 chapters = {}
 
 i = 0
-while link ~= ''
+while link ~= '' and link ~= 'next'
 	i += 1
 	link, title = grabChapter 'book/OPS/Text', link, i
 	
-	name = title\match '%S+'
-	number = title\sub name\len! + 2
+	title = title\gsub('[(]Arc ', '')\gsub('Arc ', '')\gsub('[(]Bonus', '')\gsub('&#8211; Boys[)]', '')\gsub('&#8211; Girls[)]', '')\gsub('[)]', '')\gsub('&#8211;', '')
+	-- print title
+	
+	hashalf = title\find '½'
+	if hashalf then title = title\gsub '½', ''
+	
+	name = title
+	number = ''
+	while tonumber(number) == nil and tonumber(number\sub(1, number\len!-1)) == nil and name\match('%S+') ~= nil
+		number = name\match '%S+'
+		name = name\sub number\len!+1
+		-- print '\'' .. name .. '\'', '\'' .. number .. '\''
+	
+	
+	name = title\sub 1, title\find(number) - 1
+	while name\sub(name\len!, name\len!) == ' '
+		name = name\sub(1, name\len!-1)
+		
+	if tonumber(number) == nil and tonumber(number\sub(1, number\len!-1)) == nil
+		name = title
+		number = ''
+		
+	if name\sub(name\len!) == ':'
+		name = name\sub 1, name\len!-1
 
 	chapter = 
 		name: name
@@ -107,21 +142,35 @@ while link ~= ''
 		
 	if title\find '½'
 		chapter.major = number\gsub '½', '&#189;'
-		chapter.minor = ''
 	
-	unless name\find 'Interlude'
-		chapter.major = number\sub 1, number\find('[.]')-1
-		chapter.minor = number\sub number\find('[.]')+1
+	switch name
 		
-	-- if title == 'Interlude: End'
-	-- 	chapter.major = 
+		when 'Teneral e.'
+			chapter.name = 'Teneral'
+			chapter.major = 'e'
+			chapter.minor = number
 		
+		when 'Epilogue'
+			chapter.name = 'Epilogue'
+			chapter.major = ''
+			
+		else
+			if number\find('[.]')
+				chapter.major = number\sub 1, number\find('[.]')-1
+				chapter.minor = number\sub number\find('[.]')+1
+				
+			if title\find('e[.]')
+				chapter.major = 'e'
+	
+	
+	if hashalf and chapter.minor == '' then chapter.major ..= '½'
 	chapters[i] = chapter
-
+	
+	
+	-- print '\'' .. chapter.name .. '\'', '\'' .. chapter.major .. '\'', '\'' .. chapter.minor .. '\''
+	
 	-- if i > 5
 	-- 	break
-
-
 
 print 'done fetching'
 
@@ -146,14 +195,13 @@ f\write [[
 <?xml version='1.0' encoding='utf-8'?>
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:svg="http://www.w3.org/2000/svg" xmlns:epub="http://www.idpf.org/2007/ops" version="3.0" unique-identifier="pub-id" xml:lang="en">
 	<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-		<dc:title>Worm</dc:title>
+		<dc:title>]] .. book\gsub('^%l', string.upper) .. [[</dc:title>
 		<dc:creator id="creator01">Wildbow</dc:creator>
 		<dc:language>en</dc:language>
-		<dc:identifier id="pub-id">wildbow.worm</dc:identifier>
+		<dc:identifier id="pub-id">wildbow.]] .. book .. [[</dc:identifier>
 		<meta property="dcterms:modified">]] .. os.date("%Y-%m-%dT%H:%M:%SZ") .. [[</meta>
 	</metadata>
 	<manifest>
-		<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>
 ]]
 
 
@@ -163,10 +211,8 @@ for i, chapter in ipairs(chapters)
 f\write [[
 		<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
 		<item id="o_O" href="Images/o_O.svg" media-type="image/svg+xml"/>
-		<item id="cover_image" href="Images/cover.jpeg" media-type="image/jpeg"/>
 	</manifest>
 	<spine>
-		<itemref idref="cover" linear="yes"/>
 ]]
 
 for i, chapter in ipairs(chapters)
@@ -178,22 +224,6 @@ f\write [[
 </package>
 ]]
 
-f\close!
-
-
-f = io.open 'book/OPS/cover.xhtml', 'w'
-f\write [[
-<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-	<title>Worm</title>
-	<meta charset="utf-8"/>
-</head>
-<body>
-	<p style="text-align:center;"><img alt="Cover Image" src="Images/cover.jpeg" style="height: 100%;"/></p>
-</body>
-</html>
-]]
 f\close!
 
 f = io.open 'book/OPS/nav.xhtml', 'w'
@@ -209,32 +239,40 @@ f\write [[
 		<h1 class="title">Table of Contents</h1>
 		
 		<ol>
-			<li><a href="cover.xhtml">Cover</a></li>
 ]]
 
 lastMajor = ''
+hasepilogue = false
+
 for i, chapter in ipairs(chapters)
 
-	unless chapter.name == 'Interlude'
+	if chapter.name == 'Epilogue'
+		hasepilogue = true
+		f\write '\t\t\t</ol>\n\t\t\t\t</li>\n'
+		f\write string.format('\t\t\t<li><a href="Text/chapter%03d.xhtml">Epilogue</a></li>\n', i)
+		continue
+
+
+	unless chapter.minor == ''
 		unless lastMajor == chapter.major
 			unless lastMajor == ''
-				f\write '\t\t\t</ol>\n\t\t\t\t</li>\n'
+				f\write '\t\t\t\t</ol>\n\t\t\t</li>\n'
 				
 			f\write string.format('\t\t\t<li><a href="Text/chapter%03d.xhtml">Arc %s: %s</a>\n', i, chapter.major, chapter.name)
 			f\write '\t\t\t\t<ol>\n'
+		
+		f\write string.format('\t\t\t\t\t<li><a href="Text/chapter%03d.xhtml">%s.%s</a></li>\n', i, chapter.major, chapter.minor)
 			
 		lastMajor = chapter.major
-		
 	
-	unless chapter.minor == ''
-		f\write string.format('\t\t\t\t\t<li><a href="Text/chapter%03d.xhtml">%s.%s</a></li>\n', i, chapter.major, chapter.minor)
 	else
 		f\write string.format('\t\t\t\t\t<li><a href="Text/chapter%03d.xhtml">%s %s</a></li>\n', i, chapter.name, chapter.major)
 	
 
+unless hasepilogue
+	f\write '\t\t\t\t</ol>\t\t\t</li>\n'
+
 f\write [[
-				</ol>
-			</li>
 		</ol>
 	</nav>
 </body>
@@ -245,4 +283,5 @@ f\close!
 
 -- zip
 os.execute 'epubcheck book/ --mode exp --save'
+os.execute 'mv book.epub ' .. book\gsub('^%l', string.upper) .. '.epub'
 
